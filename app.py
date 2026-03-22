@@ -17,7 +17,7 @@ st.set_page_config(
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
-# CSS Kustom (tetap sama seperti sebelumnya, tapi sudah dipastikan bersih)
+# CSS (sama seperti sebelumnya, dipotong agar tidak terlalu panjang)
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
@@ -51,7 +51,7 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif;}
 """, unsafe_allow_html=True)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Groq AI (untuk summary, hanya dipanggil di top 3)
+# Groq AI (untuk summary)
 GROQ_KEY = st.secrets.get("GROQ_API_KEY", "")
 
 def ai_summary(prompt):
@@ -75,24 +75,25 @@ def ai_summary(prompt):
         return ""
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Fungsi ambil data yfinance
+# Fungsi ambil data yfinance dengan cache
+@st.cache_data(ttl=3600, show_spinner=False)
 def ambil_data(kode):
     try:
         t = yf.Ticker(f"{kode}.JK")
         df = t.history(period="1y")
         info = t.info
-        if df is None or df.empty or len(df) < 60:
+        if df is None or df.empty or len(df) < 30:  # kurangi menjadi 30 hari
             return None, None
         return df, info
     except Exception:
         return None, None
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Core engine: analisis lengkap dengan behavioral pattern + bandarmologi
+# Core engine: analisis lengkap
 def analisis_lengkap(kode):
     try:
         df, info = ambil_data(kode)
-        if df is None or df.empty or len(df) < 60:
+        if df is None or df.empty or len(df) < 30:
             return None
     except Exception:
         return None
@@ -171,7 +172,7 @@ def analisis_lengkap(kode):
         hn = {0: 'Senin', 1: 'Selasa', 2: 'Rabu', 3: 'Kamis', 4: 'Jumat'}
         hari_terbaik = hn.get(bd.idxmax() if not bd.empty else 0, 'N/A')
 
-        # Bandarmologi (CMF + OBV)
+        # Bandarmologi
         clv = ((c - l) - (h - c)) / (h - l + 1e-10)
         cmf = (clv * v).tail(20).sum() / (v.tail(20).sum() + 1e-10)
         obv = (np.sign(c.diff()) * v).cumsum()
@@ -222,7 +223,7 @@ def analisis_lengkap(kode):
         return None
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Daftar saham IDX (lengkap, sudah dibersihkan duplikat)
+# Daftar saham IDX (sudah dibersihkan)
 SAHAM_IDX = [
     "AALI","ACES","ADHI","ADRO","AGII","AKRA","AMRT","ANTM","ARNA","ASII",
     "ASRI","AUTO","BBCA","BBNI","BBRI","BBTN","BFIN","BJBR","BJTM","BKSL",
@@ -278,10 +279,10 @@ SAHAM_IDX = [
     "SMLE","ACRO","MANG","WIFI","FAPA","DCII","DGNS","ADMG","AGRS","PNSE",
     "POLY","POOL","PPRO"
 ]
-SAHAM_IDX = sorted(set(SAHAM_IDX))  # hilangkan duplikat
+SAHAM_IDX = sorted(set(SAHAM_IDX))
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Render kartu (tampilan rekomendasi)
+# Render kartu
 def render_kartu(rank, r):
     beli = 'AKUMULASI' in r['bandar'] and r['prob'] >= 10 and r['confidence'] >= 40
     cls = "kartu-beli" if beli else "kartu-tunggu"
@@ -326,7 +327,6 @@ def render_kartu(rank, r):
     </div>
     """, unsafe_allow_html=True)
 
-    # AI summary (2 kalimat)
     if GROQ_KEY:
         with st.spinner(""):
             ai = ai_summary(
@@ -357,11 +357,9 @@ def main():
 
     tab1, tab2 = st.tabs(["🏆 Scan Open=Low Besok", "🔍 Cek Saham"])
 
-    # ── Tab 1: Scanner ──
     with tab1:
         st.markdown("""
-        <div style="background:#161b22;border-radius:10px;padding:12px 16px;
-                    margin-bottom:16px;border:1px solid #21262d;">
+        <div style="background:#161b22;border-radius:10px;padding:12px 16px;margin-bottom:16px;border:1px solid #21262d;">
             <p style="color:#8b949e;font-size:13px;margin:0;line-height:1.6;">
                 💡 <b style="color:#e6edf3;">Cara pakai:</b>
                 Jalankan sore <b style="color:#00d4aa;">15:30–17:00</b> setelah market tutup.
@@ -385,7 +383,7 @@ def main():
                 prog.progress((i + 1) / total)
                 info_txt.markdown(f'<p style="color:#484f58;font-size:12px;font-family:monospace;">⏳ [{i+1}/{total}] Menganalisis {kode}...</p>', unsafe_allow_html=True)
                 r = analisis_lengkap(kode)
-                time.sleep(0.05)  # agar tidak terlalu agresif ke yfinance
+                time.sleep(0.05)
                 if r is None:
                     continue
                 diproses += 1
@@ -425,7 +423,6 @@ def main():
                 ⚠️ Bukan saran investasi · Selalu gunakan stop loss · DYOR
             </div>""", unsafe_allow_html=True)
 
-    # ── Tab 2: Cek Saham ──
     with tab2:
         if 'kode_cek' not in st.session_state:
             st.session_state['kode_cek'] = ''
